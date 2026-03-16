@@ -18,6 +18,7 @@ import ChangePasswordPage from './pages/auth/ChangePasswordPage';
 
 // Dashboard pages
 import CustomerDashboard from './pages/dashboard/CustomerDashboard';
+import ProviderDashboard from './pages/dashboard/ProviderDashboard';
 
 // Placeholder for pages not yet built
 const PlaceholderPage = ({ title }) => (
@@ -102,7 +103,7 @@ const App = () => {
             element={
               <ProtectedRoute>
                 <RoleRoute roles={['provider']}>
-                  <PlaceholderPage title="Provider Dashboard" />
+                  <ProviderDashboard />
                 </RoleRoute>
               </ProtectedRoute>
             }
