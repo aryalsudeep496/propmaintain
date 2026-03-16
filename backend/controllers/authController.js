@@ -48,15 +48,25 @@ const register = async (req, res) => {
       // Don't fail registration if email fails; log and continue
     }
 
-    return res.status(201).json({
-      success: true,
-      message: 'Account created successfully. Please check your email to verify your account.',
-      data: {
-        userId:          user._id,
-        email:           user.email,
-        isEmailVerified: user.isEmailVerified,
-      },
-    });
+   // Auto-verify in development so you can test without email setup
+if (process.env.NODE_ENV === 'development') {
+  user.isEmailVerified = true;
+  user.emailVerifyToken = undefined;
+  user.emailVerifyExpire = undefined;
+  await user.save({ validateBeforeSave: false });
+}
+
+return res.status(201).json({
+  success: true,
+  message: process.env.NODE_ENV === 'development'
+    ? 'Account created successfully. You can now log in.'
+    : 'Account created successfully. Please check your email to verify your account.',
+  data: {
+    userId:          user._id,
+    email:           user.email,
+    isEmailVerified: user.isEmailVerified,
+  },
+});
   } catch (error) {
     console.error('Register error:', error);
 
