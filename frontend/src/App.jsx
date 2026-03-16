@@ -16,7 +16,10 @@ import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage  from './pages/auth/ResetPasswordPage';
 import ChangePasswordPage from './pages/auth/ChangePasswordPage';
 
-// Placeholder pages (to be built in next phases)
+// Dashboard pages
+import CustomerDashboard from './pages/dashboard/CustomerDashboard';
+
+// Placeholder for pages not yet built
 const PlaceholderPage = ({ title }) => (
   <div style={{
     minHeight: '100vh', display: 'flex', alignItems: 'center',
@@ -33,7 +36,6 @@ const App = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        {/* Inject CSS keyframe for spinner */}
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,7 +46,7 @@ const App = () => {
         `}</style>
 
         <Routes>
-          {/* ── Public auth routes (redirect if already logged in) ── */}
+          {/* ── Public auth routes ── */}
           <Route
             path="/auth/register"
             element={
@@ -78,26 +80,23 @@ const App = () => {
             }
           />
 
-          {/* ── Email verification (public – token in URL) ── */}
+          {/* ── Email verification ── */}
           <Route path="/auth/verify-email/:token" element={<VerifyEmailPage />} />
-          <Route
-            path="/auth/resend-verification"
-            element={<PlaceholderPage title="Resend Verification" />}
-          />
+          <Route path="/auth/resend-verification"  element={<PlaceholderPage title="Resend Verification" />} />
 
-          {/* ── Protected: Customer dashboard ── */}
+          {/* ── Customer dashboard ── */}
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
                 <RoleRoute roles={['customer']}>
-                  <PlaceholderPage title="Customer Dashboard" />
+                  <CustomerDashboard />
                 </RoleRoute>
               </ProtectedRoute>
             }
           />
 
-          {/* ── Protected: Provider dashboard ── */}
+          {/* ── Provider dashboard ── */}
           <Route
             path="/provider/dashboard"
             element={
@@ -109,7 +108,7 @@ const App = () => {
             }
           />
 
-          {/* ── Protected: Admin dashboard ── */}
+          {/* ── Admin dashboard ── */}
           <Route
             path="/admin/dashboard"
             element={
@@ -121,7 +120,7 @@ const App = () => {
             }
           />
 
-          {/* ── Protected: Change password (all roles) ── */}
+          {/* ── Change password ── */}
           <Route
             path="/account/change-password"
             element={
@@ -132,8 +131,8 @@ const App = () => {
           />
 
           {/* ── Default redirect ── */}
-          <Route path="/" element={<Navigate to="/auth/login" replace />} />
-          <Route path="*" element={<Navigate to="/auth/login" replace />} />
+          <Route path="/"  element={<Navigate to="/auth/login" replace />} />
+          <Route path="*"  element={<Navigate to="/auth/login" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
