@@ -4,6 +4,8 @@ import { useSocket } from '../context/SocketContext';
 import { requestsAPI } from '../utils/requestsAPI';
 import { playNotificationSound } from './NotificationToast';
 
+// MiniChatPanel self-fetches its own request list so it works on every page.
+
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 const Avatar = ({ name = '', size = 38, bg = '#1a3c5e' }) => (
   <div style={{
@@ -33,10 +35,11 @@ const fmtMsgTime = (d) =>
   d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
 
 // ─── Main component ───────────────────────────────────────────────────────────
-const MiniChatPanel = ({ requests = [], onUnread }) => {
+const MiniChatPanel = ({ onUnread }) => {
   const { user }   = useAuth();
   const { socket } = useSocket();
 
+  const [requests,    setRequests]    = useState([]);
   const [activeConv,  setActiveConv]  = useState(null);
   const [messages,    setMessages]    = useState([]);
   const [msgText,     setMsgText]     = useState('');
@@ -45,10 +48,24 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
   const [unreadMap,   setUnreadMap]   = useState({});  // { reqId: count }
   const [previewMap,  setPreviewMap]  = useState({});  // { reqId: { text, time } }
 
-  const chatEndRef = useRef(null);
-  const inputRef   = useRef(null);
+  const chatEndRef    = useRef(null);
+  const inputRef      = useRef(null);
+  // Refs to avoid stale closures in the socket handler
+  const activeConvRef = useRef(null);
+  const onUnreadRef   = useRef(onUnread);
 
-  // Only requests where chat is enabled (provider assigned)
+  // Keep refs in sync with latest values
+  useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
+  useEffect(() => { onUnreadRef.current   = onUnread;   }, [onUnread]);
+
+  // Fetch own requests (all chatable ones, not relying on parent's 5-item list)
+  useEffect(() => {
+    requestsAPI.getMy({ limit: 50 })
+      .then(res => setRequests(res.data.data || []))
+      .catch(() => {});
+  }, []);
+
+  // Only requests where chat is enabled (provider assigned and not pending/cancelled)
   const chatableReqs = requests.filter(r =>
     r.provider && !['pending', 'cancelled'].includes(r.status)
   );
@@ -59,25 +76,28 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
   }, [messages]);
 
   // ── Socket: join all rooms + listen ─────────────────────────────────────────
+  // Uses refs for activeConv/onUnread so this effect never needs to re-run
+  // on conversation switches (no stale-closure listener gaps).
   useEffect(() => {
     if (!socket) return;
     chatableReqs.forEach(r => socket.emit('join_request', r._id));
 
     const handleMsg = (msg) => {
       const isFromMe = msg.sender?._id?.toString() === user?._id?.toString();
+      const conv     = activeConvRef.current;
 
-      // Update preview in sidebar
+      // Update sidebar preview
       setPreviewMap(prev => ({
         ...prev,
         [msg.requestId]: { text: msg.content, time: msg.createdAt },
       }));
 
-      if (activeConv?._id?.toString() === msg.requestId?.toString()) {
+      if (conv?._id?.toString() === msg.requestId?.toString()) {
         if (isFromMe) {
           // Replace the optimistic temp message with the confirmed real one
           setMessages(prev => {
             const tempIdx = prev.findIndex(m => m._id?.toString().startsWith('temp_'));
-            if (tempIdx === -1) return prev; // nothing to replace
+            if (tempIdx === -1) return prev;
             const next = [...prev];
             next[tempIdx] = msg;
             return next;
@@ -93,7 +113,9 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
         playNotificationSound();
         setUnreadMap(prev => {
           const next = { ...prev, [msg.requestId]: (prev[msg.requestId] || 0) + 1 };
-          if (onUnread) onUnread(Object.values(next).reduce((a, b) => a + b, 0));
+          if (onUnreadRef.current) {
+            onUnreadRef.current(Object.values(next).reduce((a, b) => a + b, 0));
+          }
           return next;
         });
       }
@@ -101,9 +123,9 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
 
     socket.on('new_message', handleMsg);
     return () => socket.off('new_message', handleMsg);
-  }, [socket, chatableReqs.length, activeConv, user?._id, onUnread]);
+  }, [socket, chatableReqs.length, user?._id]);
 
-  // Re-join on reconnect
+  // Re-join rooms on reconnect
   useEffect(() => {
     if (!socket) return;
     const rejoin = () => chatableReqs.forEach(r => socket.emit('join_request', r._id));
@@ -113,14 +135,19 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
 
   // ── Open conversation ───────────────────────────────────────────────────────
   const openConversation = useCallback(async (req) => {
+    // Update ref immediately so the socket handler sees the new conversation right away
+    activeConvRef.current = req;
     setActiveConv(req);
     setMessages([]);
     setMsgText('');
     setLoadingConv(true);
     setUnreadMap(prev => { const n = { ...prev }; delete n[req._id]; return n; });
+    // Explicitly join room in case it wasn't joined yet
+    if (socket) socket.emit('join_request', req._id);
     try {
       const res = await requestsAPI.getById(req._id);
       const full = res.data.data;
+      activeConvRef.current = full;
       setActiveConv(full);
       setMessages(full.messages || []);
       const last = full.messages?.[full.messages.length - 1];
@@ -131,7 +158,7 @@ const MiniChatPanel = ({ requests = [], onUnread }) => {
     } catch { /* ignore */ } finally {
       setLoadingConv(false);
     }
-  }, []);
+  }, [socket]);
 
   // ── Send message ────────────────────────────────────────────────────────────
   const handleSend = async () => {

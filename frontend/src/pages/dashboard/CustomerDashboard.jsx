@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestsAPI, usersAPI, STATUS_CONFIG } from '../../utils/requestsAPI';
 import { ToastContainer, playNotificationSound } from '../../components/NotificationToast';
-import MiniChatPanel from '../../components/MiniChatPanel';
+import AppNavbar from '../../components/AppNavbar';
 
 const NAV_LINKS = [
   { to: '/dashboard',              label: 'Home',           icon: '🏠' },
@@ -16,20 +16,16 @@ const NAV_LINKS = [
 const CustomerDashboard = () => {
   const { user, logout } = useAuth();
   const navigate         = useNavigate();
-  const location         = useLocation();
-
   const { socket }    = useSocket();
   const toastIdRef    = useRef(0);
 
-  const [stats,        setStats]        = useState(null);
-  const [recentReqs,   setRecentReqs]   = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [unreadCount,  setUnreadCount]  = useState(0);
-  const [toasts,       setToasts]       = useState([]);
-  const [chatOpen,     setChatOpen]     = useState(false);
-  const [chatUnread,   setChatUnread]   = useState(0);
-
   const handleLogout = async () => { await logout(); navigate('/auth/login'); };
+
+  const [stats,       setStats]       = useState(null);
+  const [recentReqs,  setRecentReqs]  = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [toasts,      setToasts]      = useState([]);
 
   const dismissToast = useCallback((id) => {
     setToasts(prev => prev.filter(t => t.id !== id));
@@ -108,57 +104,7 @@ const CustomerDashboard = () => {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* ── Navbar ── */}
-      <nav style={navStyle}>
-        <Link to="/home" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-          <span style={{ fontSize: '20px' }}>🏠</span>
-          <span style={{ fontSize: '16px', fontWeight: '800', color: '#fff' }}>PropMaintain</span>
-        </Link>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {NAV_LINKS.map(({ to, label, icon, notif }) => (
-            <Link key={to} to={to} style={{
-              display: 'flex', alignItems: 'center', gap: '5px', position: 'relative',
-              padding: '6px 12px', borderRadius: '6px', textDecoration: 'none',
-              fontSize: '13px', fontWeight: '500',
-              color: location.pathname === to ? '#fff' : 'rgba(255,255,255,0.7)',
-              background: location.pathname === to ? 'rgba(255,255,255,0.15)' : 'transparent',
-            }}>
-              {icon} {label}
-              {notif && unreadCount > 0 && (
-                <span style={{ position: 'absolute', top: '2px', right: '4px', width: '16px', height: '16px', borderRadius: '50%', background: '#C17B2A', color: '#fff', fontSize: '9px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </Link>
-          ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Chat icon */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => { setChatOpen(o => !o); setChatUnread(0); }}
-              style={{ position: 'relative', background: chatOpen ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '8px', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}
-              title="Messages"
-            >
-              💬
-              {chatUnread > 0 && (
-                <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#e74c3c', color: '#fff', borderRadius: '10px', padding: '1px 5px', fontSize: '10px', fontWeight: '800', lineHeight: 1.4 }}>
-                  {chatUnread}
-                </span>
-              )}
-            </button>
-            {chatOpen && (
-              <>
-                <div onClick={() => setChatOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                <div style={{ position: 'absolute', top: 'calc(100% + 10px)', right: 0, width: '620px', zIndex: 200, boxShadow: '0 12px 40px rgba(0,0,0,0.18)', borderRadius: '14px' }}>
-                  <MiniChatPanel requests={recentReqs} onUnread={n => setChatUnread(n)} />
-                </div>
-              </>
-            )}
-          </div>
-          <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>👋 {user?.firstName}</span>
-          <button onClick={handleLogout} style={navBtnStyle}>🚪 Logout</button>
-        </div>
-      </nav>
+      <AppNavbar links={NAV_LINKS} unreadCount={unreadCount} />
 
       <div style={{ maxWidth: '960px', margin: '32px auto', padding: '0 20px' }}>
 
@@ -287,16 +233,6 @@ const CustomerDashboard = () => {
   );
 };
 
-const navStyle = {
-  height: '60px', background: '#1a3c5e', display: 'flex', alignItems: 'center',
-  padding: '0 28px', justifyContent: 'space-between',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.15)', position: 'sticky', top: 0, zIndex: 100,
-};
-const navBtnStyle = {
-  padding: '7px 14px', background: 'rgba(255,255,255,0.15)',
-  border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px',
-  color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
-};
 const cardStyle = {
   background: '#fff', borderRadius: '12px', border: '1px solid #e8ecf0',
   boxShadow: '0 2px 8px rgba(0,0,0,0.05)', padding: '24px',

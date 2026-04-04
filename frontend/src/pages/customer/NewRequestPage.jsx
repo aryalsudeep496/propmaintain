@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { requestsAPI, CATEGORIES } from '../../utils/requestsAPI';
+import AppNavbar from '../../components/AppNavbar';
 
 const NAV_LINKS = [
   { to: '/dashboard',            label: 'Home',         icon: '🏠' },
@@ -161,28 +162,7 @@ const NewRequestPage = () => {
     <div style={{ minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Outfit', sans-serif" }}>
 
       {/* ── Navbar ── */}
-      <nav style={{ height: '60px', background: '#1a3c5e', display: 'flex', alignItems: 'center', padding: '0 28px', justifyContent: 'space-between', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-        <Link to="/home" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-          <span style={{ fontSize: '20px' }}>🏠</span>
-          <span style={{ fontSize: '16px', fontWeight: '800', color: '#fff' }}>PropMaintain</span>
-        </Link>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {NAV_LINKS.map(({ to, label, icon }) => (
-            <Link key={to} to={to} style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '6px 12px', borderRadius: '6px',
-              textDecoration: 'none', fontSize: '13px', fontWeight: '500',
-              color: window.location.pathname === to ? '#fff' : 'rgba(255,255,255,0.7)',
-              background: window.location.pathname === to ? 'rgba(255,255,255,0.15)' : 'transparent',
-            }}>
-              {icon} {label}
-            </Link>
-          ))}
-        </div>
-        <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
-          👋 {user?.firstName}
-        </span>
-      </nav>
+      <AppNavbar links={NAV_LINKS} />
 
       {/* ── Page body ── */}
       <div style={{ maxWidth: '620px', margin: '32px auto', padding: '0 20px' }}>

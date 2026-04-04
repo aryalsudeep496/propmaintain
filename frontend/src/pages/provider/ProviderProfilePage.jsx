@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { usersAPI } from '../../utils/requestsAPI';
+import AppNavbar from '../../components/AppNavbar';
 
 const NAV_LINKS = [
   { to: '/provider/dashboard', label: 'Home',      icon: '🏠' },
@@ -17,9 +18,8 @@ const CATEGORY_OPTIONS = [
 ];
 
 const ProviderProfilePage = () => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser } = useAuth();
   const navigate   = useNavigate();
-  const location   = useLocation();
 
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
@@ -66,11 +66,6 @@ const ProviderProfilePage = () => {
     };
     fetchProfile();
   }, []);
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/auth/login');
-  };
 
   const toggleCategory = (val) => {
     setForm(f => ({
@@ -141,7 +136,7 @@ const ProviderProfilePage = () => {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Outfit', sans-serif" }}>
-        <nav style={navStyle} />
+        <AppNavbar links={NAV_LINKS} />
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 60px)' }}>
           <div style={spinnerStyle} />
         </div>
@@ -153,29 +148,7 @@ const ProviderProfilePage = () => {
     <div style={{ minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Outfit', sans-serif" }}>
 
       {/* ── Navbar ── */}
-      <nav style={navStyle}>
-        <Link to="/home" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-          <span style={{ fontSize: '20px' }}>🏠</span>
-          <span style={{ fontSize: '16px', fontWeight: '800', color: '#fff' }}>PropMaintain</span>
-        </Link>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {NAV_LINKS.map(({ to, label, icon }) => (
-            <Link key={to} to={to} style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '6px 12px', borderRadius: '6px',
-              textDecoration: 'none', fontSize: '13px', fontWeight: '500',
-              color: location.pathname === to ? '#fff' : 'rgba(255,255,255,0.7)',
-              background: location.pathname === to ? 'rgba(255,255,255,0.15)' : 'transparent',
-            }}>
-              {icon} {label}
-            </Link>
-          ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>👋 {user?.firstName}</span>
-          <button onClick={handleLogout} style={navBtnStyle}>🚪 Logout</button>
-        </div>
-      </nav>
+      <AppNavbar links={NAV_LINKS} />
 
       <div style={{ maxWidth: '720px', margin: '32px auto', padding: '0 20px' }}>
 
@@ -410,16 +383,6 @@ const ProviderProfilePage = () => {
   );
 };
 
-const navStyle = {
-  height: '60px', background: '#1a3c5e', display: 'flex', alignItems: 'center',
-  padding: '0 28px', justifyContent: 'space-between',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.15)', position: 'sticky', top: 0, zIndex: 100,
-};
-const navBtnStyle = {
-  padding: '7px 14px', background: 'rgba(255,255,255,0.15)',
-  border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px',
-  color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
-};
 const cardStyle = {
   background: '#fff', borderRadius: '12px', border: '1px solid #e8ecf0',
   boxShadow: '0 2px 8px rgba(0,0,0,0.05)', padding: '24px', marginBottom: '20px',
