@@ -31,6 +31,8 @@ const serviceProviderProfileSchema = new mongoose.Schema({
     enum: ['home_repair', 'home_upgrade', 'tech_digital'],
     default: [],
   },
+  // Specific service types within selected categories (e.g. 'Plumbing', 'CCTV Installation')
+  serviceTypes: { type: [String], default: [] },
   skills:  { type: [String], default: [] },
   bio: {
     type: String,

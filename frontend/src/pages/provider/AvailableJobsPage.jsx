@@ -139,19 +139,21 @@ const JobModal = ({ job, onClose, onAccept, accepting }) => {
 const AvailableJobsPage = () => {
   const navigate = useNavigate();
 
-  const [jobs,      setJobs]      = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState('');
-  const [viewJob,   setViewJob]   = useState(null);   // job shown in modal
-  const [accepting, setAccepting] = useState(false);
-  const [acceptErr, setAcceptErr] = useState('');
+  const [jobs,       setJobs]       = useState([]);
+  const [myMatched,  setMyMatched]  = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState('');
+  const [viewJob,    setViewJob]    = useState(null);
+  const [accepting,  setAccepting]  = useState(false);
+  const [acceptErr,  setAcceptErr]  = useState('');
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const res = await requestsAPI.getAvailable();
-      setJobs(res.data.data || []);
+      setJobs(res.data.data       || []);
+      setMyMatched(res.data.myMatched || []);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load available jobs.');
     } finally {
@@ -187,15 +189,17 @@ const AvailableJobsPage = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0d2137', margin: '0 0 4px' }}>
-              Available Jobs
-              {!loading && jobs.length > 0 && (
+              Browse Jobs
+              {!loading && (myMatched.length + jobs.length) > 0 && (
                 <span style={{ marginLeft: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '2px 10px', borderRadius: '20px', background: '#C17B2A', color: '#fff', fontSize: '12px', fontWeight: '800' }}>
-                  {jobs.length}
+                  {myMatched.length + jobs.length}
                 </span>
               )}
             </h1>
             <p style={{ fontSize: '14px', color: '#6b7c93', margin: 0 }}>
-              Open jobs within your service area. View details or accept directly.
+              {myMatched.length > 0
+                ? `${myMatched.length} job${myMatched.length > 1 ? 's' : ''} matched to you · ${jobs.length} open`
+                : 'Open jobs within your service area. View details or accept directly.'}
             </p>
           </div>
           <button
@@ -219,6 +223,77 @@ const AvailableJobsPage = () => {
         {error && (
           <div style={{ background: '#f8d7da', border: '1px solid #f5c6cb', borderRadius: '10px', padding: '14px 18px', marginBottom: '18px', fontSize: '14px', color: '#721c24', fontWeight: '600' }}>
             ⚠️ {error}
+          </div>
+        )}
+
+        {/* ── Your Matched Jobs ── */}
+        {!loading && myMatched.length > 0 && (
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <span style={{ fontSize: '15px', fontWeight: '800', color: '#1a3c5e' }}>🔗 Matched to You</span>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#fff', background: '#1a3c5e', padding: '2px 10px', borderRadius: '20px' }}>{myMatched.length}</span>
+              <span style={{ fontSize: '13px', color: '#6b7c93' }}>— These jobs are assigned to you and ready to start</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {myMatched.map(job => (
+                <div key={job._id} style={{ background: '#fff', borderRadius: '14px', border: '2px solid #1a3c5e', boxShadow: '0 4px 16px rgba(26,60,94,0.12)', overflow: 'hidden' }}>
+                  {/* Banner */}
+                  <div style={{ background: 'linear-gradient(135deg, #1a3c5e, #2563a8)', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#fff' }}>🔗 Matched to You — Ready to Start</span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.15)', padding: '2px 10px', borderRadius: '20px' }}>
+                      {job.urgency?.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{ padding: '16px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '10px' }}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#eef2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>
+                        {catIcon(job.category)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1a2e44', margin: '0 0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.title}</h3>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <CategoryBadge category={job.category} />
+                          <UrgencyBadge  urgency={job.urgency} />
+                        </div>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#4a5568', margin: '0 0 10px', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {job.description}
+                    </p>
+                    <div style={{ display: 'flex', gap: '14px', fontSize: '12px', color: '#8a9bb0', flexWrap: 'wrap', marginBottom: '14px' }}>
+                      <span>📍 {job.location?.city}{job.location?.postcode ? `, ${job.location.postcode}` : ''}</span>
+                      <span>🔧 {job.serviceType}</span>
+                      <span>👤 {job.customer?.firstName} {job.customer?.lastName}</span>
+                      <span>🗓 {formatDate(job.createdAt)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', borderTop: '1px solid #f0f4f8', paddingTop: '14px' }}>
+                      <button
+                        onClick={() => setViewJob(job)}
+                        style={{ flex: 1, padding: '10px 0', background: '#f0f4f8', color: '#1a3c5e', border: '1.5px solid #dde3eb', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                      >
+                        👁 View Details
+                      </button>
+                      <button
+                        onClick={() => handleAccept(job._id)}
+                        disabled={accepting}
+                        style={{ flex: 2, padding: '10px 0', background: accepting ? '#8a9bb0' : 'linear-gradient(135deg, #27ae60, #1e8449)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: accepting ? 'not-allowed' : 'pointer', fontFamily: "'Outfit', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: accepting ? 'none' : '0 3px 10px rgba(39,174,96,0.25)' }}
+                      >
+                        ✓ {accepting ? 'Starting…' : 'Accept & Start'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ height: '1px', background: '#e8ecf0', margin: '24px 0' }} />
+          </div>
+        )}
+
+        {/* ── Open Jobs ── */}
+        {!loading && jobs.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+            <span style={{ fontSize: '15px', fontWeight: '800', color: '#0d2137' }}>🟢 Open Jobs</span>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: '#fff', background: '#27ae60', padding: '2px 10px', borderRadius: '20px' }}>{jobs.length}</span>
           </div>
         )}
 

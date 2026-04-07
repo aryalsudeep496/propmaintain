@@ -24,13 +24,32 @@ const getNextAvailableSlot = (fromDate = new Date()) => {
 
 // ─── Helper: find ALL providers whose profile matches the job ─────────────────
 // Returns array of User docs
-const findAllMatchingProviders = async (category, coordinates) => {
+const findAllMatchingProviders = async (category, coordinates, serviceType) => {
+  // Base conditions that never contain $or — keeps it safe to spread alongside other filters
   const baseQuery = {
-    role:                               'provider',
-    isActive:                           true,
-    isEmailVerified:                    true,
-    'providerProfile.isAvailable':      true,
+    role:                                'provider',
+    isActive:                            true,
+    isEmailVerified:                     true,
+    'providerProfile.isAvailable':       true,
     'providerProfile.serviceCategories': category,
+  };
+
+  // ServiceType filter built separately so it never overwrites a location $or
+  // Providers with an empty serviceTypes array are treated as accepting all types.
+  const serviceTypeClause = serviceType
+    ? { $or: [
+        { 'providerProfile.serviceTypes': { $size: 0 } },   // no types set → accepts all
+        { 'providerProfile.serviceTypes': serviceType },     // explicitly includes this type
+      ]}
+    : null;
+
+  // Combine base + optional serviceType into a single query object safely
+  const buildQuery = (extra = {}) => {
+    if (serviceTypeClause) {
+      // Use $and so serviceType $or and any location $or never overwrite each other
+      return { ...baseQuery, ...extra, $and: [serviceTypeClause] };
+    }
+    return { ...baseQuery, ...extra };
   };
 
   const hasCoords = Array.isArray(coordinates) && coordinates.length === 2 &&
@@ -49,10 +68,7 @@ const findAllMatchingProviders = async (category, coordinates) => {
             distanceField: 'distanceMeters',
             maxDistance:   200000, // 200 km hard cap
             spherical:     true,
-            query:         {
-              ...baseQuery,
-              'providerProfile.location.coordinates': { $ne: [0, 0] },
-            },
+            query:         buildQuery({ 'providerProfile.location.coordinates': { $ne: [0, 0] } }),
           },
         },
         {
@@ -71,13 +87,27 @@ const findAllMatchingProviders = async (category, coordinates) => {
     }
 
     // 2) Providers with NO location set (they accept all areas)
-    const noLocProviders = await User.find({
-      ...baseQuery,
-      $or: [
-        { 'providerProfile.location': { $exists: false } },
-        { 'providerProfile.location.coordinates': [0, 0] },
-      ],
-    });
+    // Location $or is added via $and so it never conflicts with serviceType $or
+    const noLocFilter = serviceTypeClause
+      ? {
+          ...baseQuery,
+          $and: [
+            serviceTypeClause,
+            { $or: [
+                { 'providerProfile.location': { $exists: false } },
+                { 'providerProfile.location.coordinates': [0, 0] },
+              ]},
+          ],
+        }
+      : {
+          ...baseQuery,
+          $or: [
+            { 'providerProfile.location': { $exists: false } },
+            { 'providerProfile.location.coordinates': [0, 0] },
+          ],
+        };
+
+    const noLocProviders = await User.find(noLocFilter);
 
     // Merge & deduplicate
     const seen = new Set();
@@ -90,21 +120,55 @@ const findAllMatchingProviders = async (category, coordinates) => {
     });
   }
 
-  // No coordinates on job — match by category only
-  return User.find(baseQuery);
+  // No coordinates on job — match by category + serviceType only
+  return User.find(buildQuery());
 };
 
 // ─── Helper: broadcast new job to ALL matching providers ──────────────────────
+// Returns { providerCount, immediatelyScheduled, scheduledDate }
 const broadcastToMatchingProviders = async (request, io) => {
   const coords    = request.location?.coordinates?.coordinates || null;
-  const providers = await findAllMatchingProviders(request.category, coords);
+  const providers = await findAllMatchingProviders(request.category, coords, request.serviceType);
 
-  console.log(`📡 Broadcasting new job "${request.title}" to ${providers.length} matching provider(s)`);
+  console.log(`📡 [${request.category}/${request.serviceType}] Broadcasting "${request.title}" → ${providers.length} matching provider(s)`);
+  if (providers.length > 0) {
+    console.log(`   Provider IDs: ${providers.map(p => p._id).join(', ')}`);
+  }
 
-  if (io && providers.length > 0) {
-    const customer     = await User.findById(request.customer).select('firstName lastName');
-    const customerName = customer ? `${customer.firstName} ${customer.lastName}` : 'Customer';
+  // ── No providers available → schedule immediately ─────────────────────────
+  if (providers.length === 0) {
+    const scheduledDate = getNextAvailableSlot(request.preferredDate);
+    await ServiceRequest.findByIdAndUpdate(request._id, {
+      status:        'scheduled',
+      scheduledDate,
+      $push: {
+        statusHistory: {
+          status: 'scheduled',
+          note:   'No matching providers available — auto-scheduled for next available slot',
+        },
+      },
+    });
 
+    console.log(`📅 No matching providers found — request ${request._id} immediately scheduled for ${scheduledDate}`);
+    notifyRequestScheduled(request.customer, request._id, request.title, scheduledDate);
+
+    if (io) {
+      io.to(`user:${request.customer}`).emit('request_scheduled', {
+        requestId:     request._id.toString(),
+        title:         request.title,
+        message:       'No providers are currently available for this service. Your request has been scheduled for the next available slot.',
+        scheduledDate: scheduledDate.toISOString(),
+      });
+    }
+
+    return { providerCount: 0, immediatelyScheduled: true, scheduledDate };
+  }
+
+  // ── Providers found → notify them all ────────────────────────────────────
+  const customer     = await User.findById(request.customer).select('firstName lastName');
+  const customerName = customer ? `${customer.firstName} ${customer.lastName}` : 'Customer';
+
+  if (io) {
     for (const prov of providers) {
       io.to(`user:${prov._id}`).emit('new_job_available', {
         requestId:    request._id.toString(),
@@ -145,6 +209,8 @@ const broadcastToMatchingProviders = async (request, io) => {
       console.error('Auto-schedule timeout error:', err);
     }
   }, 2 * 60 * 1000); // 2 minutes
+
+  return { providerCount: providers.length, immediatelyScheduled: false, scheduledDate: null };
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -177,11 +243,20 @@ const createRequest = async (req, res) => {
 
     // Broadcast to ALL matching providers so they all see the popup
     const io = req.app.get('io');
-    await broadcastToMatchingProviders(request, io);
+    const { immediatelyScheduled, scheduledDate } = await broadcastToMatchingProviders(request, io);
 
     const populated = await ServiceRequest.findById(request._id)
       .populate('customer', 'firstName lastName email phone')
       .populate('provider', 'firstName lastName email phone providerProfile');
+
+    if (immediatelyScheduled) {
+      return res.status(201).json({
+        success:   true,
+        scheduled: true,
+        message:   `No providers are currently available for "${title}". Your request has been scheduled for ${new Date(scheduledDate).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })} at 9:00 AM.`,
+        data:      populated,
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -255,9 +330,17 @@ const getRequest = async (req, res) => {
     const isCustomer = request.customer._id.equals(req.user._id);
     const isProvider = request.provider && request.provider._id.equals(req.user._id);
     const isAdmin    = req.user.role === 'admin';
-    // Any provider can view unstarted jobs (for browsing)
-    const isBrowsableJob = req.user.role === 'provider' &&
-      ['pending', 'scheduled', 'matched'].includes(request.status);
+
+    // Provider can browse unstarted jobs only if their categories/serviceTypes match
+    let isBrowsableJob = false;
+    if (req.user.role === 'provider' && ['pending', 'scheduled', 'matched'].includes(request.status)) {
+      const viewingProvider = await User.findById(req.user._id).select('providerProfile');
+      const pCats  = viewingProvider?.providerProfile?.serviceCategories || [];
+      const pTypes = viewingProvider?.providerProfile?.serviceTypes || [];
+      const catOk  = pCats.length === 0 || pCats.includes(request.category);
+      const typeOk = pTypes.length === 0 || !request.serviceType || pTypes.includes(request.serviceType);
+      isBrowsableJob = catOk && typeOk;
+    }
 
     if (!isCustomer && !isProvider && !isAdmin && !isBrowsableJob) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
@@ -483,6 +566,32 @@ const submitReview = async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 const acceptJob = async (req, res) => {
   try {
+    // Verify the provider's profile matches this job's category & service type
+    const provider = await User.findById(req.user._id);
+    const providerCategories = provider?.providerProfile?.serviceCategories || [];
+    const providerServiceTypes = provider?.providerProfile?.serviceTypes || [];
+
+    const job = await ServiceRequest.findById(req.params.id);
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Request not found.' });
+    }
+
+    // Category must match
+    if (providerCategories.length > 0 && !providerCategories.includes(job.category)) {
+      return res.status(403).json({
+        success: false,
+        message: `You can only accept jobs in your service categories (${providerCategories.join(', ')}). This job requires "${job.category}".`,
+      });
+    }
+
+    // Service type must match (if provider has specific types configured)
+    if (providerServiceTypes.length > 0 && job.serviceType && !providerServiceTypes.includes(job.serviceType)) {
+      return res.status(403).json({
+        success: false,
+        message: `You can only accept jobs matching your service types (${providerServiceTypes.join(', ')}). This job requires "${job.serviceType}".`,
+      });
+    }
+
     // Use findOneAndUpdate with atomic check so two providers can't both win
     const request = await ServiceRequest.findOneAndUpdate(
       {
@@ -582,34 +691,52 @@ const getAvailableRequests = async (req, res) => {
     const categories = provider?.providerProfile?.serviceCategories || [];
     const areaCity   = provider?.providerProfile?.serviceAreaCity || '';
 
-    // Show all unstarted jobs this provider hasn't already accepted
-    const filter = {
+    const serviceTypes = provider?.providerProfile?.serviceTypes || [];
+
+    // Open jobs not assigned to this provider
+    const openFilter = {
       status:   { $in: ['pending', 'scheduled', 'matched'] },
       provider: { $ne: req.user._id },
     };
-
-    // Filter by category only if provider has categories set
     if (categories.length > 0) {
-      filter.category = { $in: categories };
+      openFilter.category = { $in: categories };
+    }
+    // Match service type: if provider has specific types set, only show those jobs
+    if (serviceTypes.length > 0) {
+      openFilter.serviceType = { $in: serviceTypes };
     }
 
-    // Soft city filter — if provider has a serviceAreaCity, prefer matching city
-    // We do this as a post-sort (show same-city first) rather than hard exclusion
-    const requests = await ServiceRequest.find(filter)
-      .populate('customer', 'firstName lastName')
-      .populate('provider', 'firstName lastName')
-      .sort({ urgency: -1, createdAt: 1 })
-      .limit(50);
+    // Jobs explicitly matched/assigned to this provider (not yet started)
+    const myMatchedFilter = {
+      status:   'matched',
+      provider: req.user._id,
+    };
 
-    // If provider has a city set, sort matching city jobs first
-    const sorted = areaCity
+    const [openRequests, myMatchedRequests] = await Promise.all([
+      ServiceRequest.find(openFilter)
+        .populate('customer', 'firstName lastName')
+        .populate('provider', 'firstName lastName')
+        .sort({ urgency: -1, createdAt: 1 })
+        .limit(50),
+      ServiceRequest.find(myMatchedFilter)
+        .populate('customer', 'firstName lastName email phone')
+        .populate('provider', 'firstName lastName')
+        .sort({ updatedAt: -1 }),
+    ]);
+
+    // Sort open jobs: same-city first if provider has a service area
+    const sortedOpen = areaCity
       ? [
-          ...requests.filter(r => r.location?.city?.toLowerCase().includes(areaCity.toLowerCase())),
-          ...requests.filter(r => !r.location?.city?.toLowerCase().includes(areaCity.toLowerCase())),
+          ...openRequests.filter(r =>  r.location?.city?.toLowerCase().includes(areaCity.toLowerCase())),
+          ...openRequests.filter(r => !r.location?.city?.toLowerCase().includes(areaCity.toLowerCase())),
         ]
-      : requests;
+      : openRequests;
 
-    return res.status(200).json({ success: true, data: sorted });
+    return res.status(200).json({
+      success:    true,
+      data:       sortedOpen,
+      myMatched:  myMatchedRequests,
+    });
 
   } catch (error) {
     console.error('getAvailableRequests error:', error);

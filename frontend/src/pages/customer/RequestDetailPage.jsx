@@ -179,6 +179,7 @@ const RequestDetailPage = () => {
   const [comment,       setComment]       = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
   const [successMsg,    setSuccessMsg]    = useState(location.state?.successMsg || '');
+  const [isScheduledMsg, setIsScheduledMsg] = useState(location.state?.scheduled || false);
   const [errorMsg,      setErrorMsg]      = useState('');
 
   // Progress update state
@@ -436,9 +437,31 @@ const RequestDetailPage = () => {
 
         {/* ── Alert banners ── */}
         {successMsg && (
-          <div style={{ background: '#d4edda', border: '1px solid #c3e6cb', borderRadius: '8px', padding: '12px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '14px', color: '#155724', fontWeight: '600' }}>✅ {successMsg}</span>
-            <button onClick={() => setSuccessMsg('')} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#155724' }}>×</button>
+          <div style={{
+            background:   isScheduledMsg ? '#fff8e6' : '#d4edda',
+            border:       `1px solid ${isScheduledMsg ? '#f5c842' : '#c3e6cb'}`,
+            borderRadius: '8px',
+            padding:      '14px 16px',
+            marginBottom: '14px',
+            display:      'flex',
+            justifyContent: 'space-between',
+            alignItems:   'flex-start',
+            gap:          '10px',
+          }}>
+            <div>
+              <span style={{ fontSize: '14px', color: isScheduledMsg ? '#7d5700' : '#155724', fontWeight: '700', display: 'block', marginBottom: isScheduledMsg ? '4px' : 0 }}>
+                {isScheduledMsg ? '📅 Request Scheduled' : '✅ ' + successMsg}
+              </span>
+              {isScheduledMsg && (
+                <span style={{ fontSize: '13px', color: '#7d5700', lineHeight: 1.5 }}>
+                  {successMsg}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => { setSuccessMsg(''); setIsScheduledMsg(false); }}
+              style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: isScheduledMsg ? '#7d5700' : '#155724', flexShrink: 0 }}
+            >×</button>
           </div>
         )}
         {errorMsg && (

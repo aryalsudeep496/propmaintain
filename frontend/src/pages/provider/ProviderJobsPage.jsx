@@ -14,10 +14,10 @@ const NAV_LINKS = [
 
 const STATUS_FILTERS = [
   { value: '',            label: 'All' },
-  { value: 'pending',     label: 'Pending' },
   { value: 'matched',     label: 'Matched' },
-  { value: 'scheduled',   label: 'Scheduled' },
   { value: 'in_progress', label: 'In Progress' },
+  { value: 'scheduled',   label: 'Scheduled' },
+  { value: 'pending',     label: 'Pending' },
   { value: 'completed',   label: 'Completed' },
   { value: 'cancelled',   label: 'Cancelled' },
 ];
@@ -25,20 +25,25 @@ const STATUS_FILTERS = [
 const ProviderJobsPage = () => {
   const { user }      = useAuth();
 
-  const [jobs,        setJobs]        = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [filter,      setFilter]      = useState('');
-  const [page,        setPage]        = useState(1);
-  const [pagination,  setPagination]  = useState({});
+  const [jobs,          setJobs]          = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [filter,        setFilter]        = useState('');
+  const [page,          setPage]          = useState(1);
+  const [pagination,    setPagination]    = useState({});
+  const [matchedCount,  setMatchedCount]  = useState(0);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
       const params = { page, limit: 10 };
       if (filter) params.status = filter;
-      const res = await requestsAPI.getMy(params);
+      const [res, matchedRes] = await Promise.all([
+        requestsAPI.getMy(params),
+        requestsAPI.getMy({ status: 'matched', limit: 100 }),
+      ]);
       setJobs(res.data.data || []);
       setPagination(res.data.pagination || {});
+      setMatchedCount(matchedRes.data.pagination?.total || 0);
     } catch (err) {
       console.error('fetchJobs error:', err);
     } finally {
@@ -76,21 +81,37 @@ const ProviderJobsPage = () => {
 
         {/* ── Filter tabs ── */}
         <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          {STATUS_FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => handleFilter(value)}
-              style={{
-                padding: '6px 14px', borderRadius: '20px', border: 'none',
-                fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-                fontFamily: "'Outfit', sans-serif",
-                background: filter === value ? '#1a3c5e' : '#e8ecf0',
-                color:      filter === value ? '#fff'    : '#6b7c93',
-              }}
-            >
-              {label}
-            </button>
-          ))}
+          {STATUS_FILTERS.map(({ value, label }) => {
+            const isMatched = value === 'matched';
+            const isActive  = filter === value;
+            return (
+              <button
+                key={value}
+                onClick={() => handleFilter(value)}
+                style={{
+                  padding: '6px 14px', borderRadius: '20px', border: 'none',
+                  fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                  fontFamily: "'Outfit', sans-serif",
+                  background: isActive ? '#1a3c5e' : isMatched && matchedCount > 0 ? '#e8f0fb' : '#e8ecf0',
+                  color:      isActive ? '#fff'    : isMatched && matchedCount > 0 ? '#1a3c5e' : '#6b7c93',
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                }}
+              >
+                {label}
+                {isMatched && matchedCount > 0 && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: '18px', height: '18px', borderRadius: '50%',
+                    background: isActive ? '#fff' : '#1a3c5e',
+                    color:      isActive ? '#1a3c5e' : '#fff',
+                    fontSize: '10px', fontWeight: '800', lineHeight: 1,
+                  }}>
+                    {matchedCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* ── Job list ── */}

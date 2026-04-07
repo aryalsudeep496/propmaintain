@@ -155,7 +155,10 @@ const NewRequestPage = () => {
 
       const res = await requestsAPI.create(payload);
       navigate(`/customer/requests/${res.data.data._id}`, {
-        state: { successMsg: res.data.message },
+        state: {
+          successMsg: res.data.message,
+          scheduled:  res.data.scheduled || false,
+        },
       });
     } catch (err) {
       setServerError(err.response?.data?.message || 'Failed to submit request. Please try again.');

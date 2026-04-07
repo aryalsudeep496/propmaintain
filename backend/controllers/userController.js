@@ -1,6 +1,49 @@
 const User           = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 
+// ─── Helper: emit new_job_available for every waiting job that matches this provider ──
+const notifyProviderOfWaitingJobs = async (provider, io) => {
+  if (!io) return;
+
+  const categories   = provider.providerProfile?.serviceCategories || [];
+  const serviceTypes = provider.providerProfile?.serviceTypes      || [];
+
+  const filter = {
+    status:   { $in: ['pending', 'scheduled'] },
+    provider: null,   // unassigned
+  };
+  if (categories.length > 0)   filter.category    = { $in: categories };
+  if (serviceTypes.length > 0) filter.serviceType = { $in: serviceTypes };
+
+  const waitingJobs = await ServiceRequest.find(filter)
+    .populate('customer', 'firstName lastName')
+    .limit(30)
+    .lean();
+
+  if (waitingJobs.length === 0) {
+    console.log(`📭 Provider ${provider.email} came online — no waiting jobs match their profile`);
+    return;
+  }
+
+  console.log(`📬 Provider ${provider.email} came online — notifying of ${waitingJobs.length} waiting job(s)`);
+
+  for (const job of waitingJobs) {
+    const customerName = job.customer
+      ? `${job.customer.firstName} ${job.customer.lastName}`
+      : 'Customer';
+
+    io.to(`user:${provider._id}`).emit('new_job_available', {
+      requestId:    job._id.toString(),
+      title:        job.title,
+      customerName,
+      category:     job.category,
+      urgency:      job.urgency,
+      city:         job.location?.city || '',
+      role:         'provider',
+    });
+  }
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // GET OWN PROFILE
 // @route  GET /api/users/profile
@@ -25,7 +68,7 @@ const updateProfile = async (req, res) => {
   try {
     const {
       firstName, lastName, phone,
-      businessName, serviceCategories,
+      businessName, serviceCategories, serviceTypes,
       skills, bio, availabilityRadius,
       serviceAreaLocation, serviceAreaCity,
     } = req.body;
@@ -39,11 +82,21 @@ const updateProfile = async (req, res) => {
     if (phone     !== undefined) user.phone     = phone || undefined;
 
     // ── Provider-only fields ──
+    let categoriesChanged = false;
     if (user.role === 'provider') {
       if (!user.providerProfile) user.providerProfile = {};
 
       if (businessName        !== undefined) user.providerProfile.businessName        = businessName;
-      if (serviceCategories   !== undefined) user.providerProfile.serviceCategories   = serviceCategories;
+      if (serviceCategories   !== undefined) {
+        categoriesChanged = JSON.stringify(user.providerProfile.serviceCategories) !== JSON.stringify(serviceCategories);
+        user.providerProfile.serviceCategories = serviceCategories;
+      }
+      if (serviceTypes        !== undefined) {
+        if (!categoriesChanged) {
+          categoriesChanged = JSON.stringify(user.providerProfile.serviceTypes) !== JSON.stringify(serviceTypes);
+        }
+        user.providerProfile.serviceTypes = serviceTypes;
+      }
       if (skills              !== undefined) user.providerProfile.skills              = skills;
       if (bio                 !== undefined) user.providerProfile.bio                 = bio;
       if (availabilityRadius  !== undefined) user.providerProfile.availabilityRadius  = availabilityRadius;
@@ -54,6 +107,12 @@ const updateProfile = async (req, res) => {
     if (user.role === 'provider') user.markModified('providerProfile');
     await user.save({ validateBeforeSave: true });
     console.log(`✏️  Profile updated: ${user.email}`);
+
+    // If provider is currently available and changed their categories/types,
+    // notify them about any waiting jobs that now match their new profile
+    if (user.role === 'provider' && categoriesChanged && user.providerProfile?.isAvailable) {
+      await notifyProviderOfWaitingJobs(user, req.app.get('io'));
+    }
 
     return res.status(200).json({
       success: true,
@@ -86,17 +145,24 @@ const toggleAvailability = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Provider profile not found.' });
     }
 
+    const wasUnavailable = !user.providerProfile.isAvailable;
     user.providerProfile.isAvailable = !user.providerProfile.isAvailable;
     user.markModified('providerProfile');
     await user.save({ validateBeforeSave: false });
 
-    const status = user.providerProfile.isAvailable ? 'available' : 'unavailable';
+    const nowAvailable = user.providerProfile.isAvailable;
+    const status = nowAvailable ? 'available' : 'unavailable';
     console.log(`🔄 Provider ${user.email} is now ${status}`);
+
+    // When provider just came back online, notify them about waiting jobs
+    if (wasUnavailable && nowAvailable) {
+      await notifyProviderOfWaitingJobs(user, req.app.get('io'));
+    }
 
     return res.status(200).json({
       success:     true,
       message:     `You are now ${status}.`,
-      isAvailable: user.providerProfile.isAvailable,
+      isAvailable: nowAvailable,
     });
 
   } catch (error) {

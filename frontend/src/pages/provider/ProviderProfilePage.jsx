@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { usersAPI } from '../../utils/requestsAPI';
+import { usersAPI, CATEGORIES } from '../../utils/requestsAPI';
 import AppNavbar from '../../components/AppNavbar';
 import LocationPicker from '../../components/LocationPicker';
 
@@ -35,6 +35,7 @@ const ProviderProfilePage = () => {
     businessName:       '',
     bio:                '',
     serviceCategories:  [],
+    serviceTypes:       [],
     skills:             [],
     availabilityRadius: 25,
     isAvailable:        true,
@@ -59,6 +60,7 @@ const ProviderProfilePage = () => {
           businessName:       pp.businessName      || '',
           bio:                pp.bio               || '',
           serviceCategories:  pp.serviceCategories || [],
+          serviceTypes:       pp.serviceTypes      || [],
           skills:             pp.skills            || [],
           availabilityRadius: pp.availabilityRadius ?? 25,
           isAvailable:        pp.isAvailable       ?? true,
@@ -77,11 +79,30 @@ const ProviderProfilePage = () => {
   }, []);
 
   const toggleCategory = (val) => {
+    setForm(f => {
+      const removing = f.serviceCategories.includes(val);
+      // When removing a category, also remove its service types
+      const removedTypes = removing
+        ? (CATEGORIES[val]?.types || [])
+        : [];
+      return {
+        ...f,
+        serviceCategories: removing
+          ? f.serviceCategories.filter(c => c !== val)
+          : [...f.serviceCategories, val],
+        serviceTypes: removing
+          ? f.serviceTypes.filter(t => !removedTypes.includes(t))
+          : f.serviceTypes,
+      };
+    });
+  };
+
+  const toggleServiceType = (type) => {
     setForm(f => ({
       ...f,
-      serviceCategories: f.serviceCategories.includes(val)
-        ? f.serviceCategories.filter(c => c !== val)
-        : [...f.serviceCategories, val],
+      serviceTypes: f.serviceTypes.includes(type)
+        ? f.serviceTypes.filter(t => t !== type)
+        : [...f.serviceTypes, type],
     }));
   };
 
@@ -113,6 +134,7 @@ const ProviderProfilePage = () => {
         phone:              form.phone || undefined,
         businessName:       form.businessName,
         serviceCategories:  form.serviceCategories,
+        serviceTypes:       form.serviceTypes,
         skills:             form.skills,
         bio:                form.bio,
         availabilityRadius: form.availabilityRadius,
@@ -279,13 +301,16 @@ const ProviderProfilePage = () => {
             </div>
           </div>
 
-          {/* Service categories */}
+          {/* Service categories + service types */}
           <div style={cardStyle}>
-            <h2 style={sectionTitleStyle}>Service Categories</h2>
+            <h2 style={sectionTitleStyle}>Service Categories &amp; Types</h2>
             <p style={{ fontSize: '13px', color: '#6b7c93', margin: '0 0 16px' }}>
-              Select the categories you offer. You will only receive jobs in your selected categories.
+              Select the categories you offer, then tick the specific service types you can handle.
+              Only jobs matching your selected types will be sent to you.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+
+            {/* Category cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
               {CATEGORY_OPTIONS.map(({ value, label, icon, desc }) => {
                 const active = form.serviceCategories.includes(value);
                 return (
@@ -308,6 +333,57 @@ const ProviderProfilePage = () => {
                 );
               })}
             </div>
+
+            {/* Service types per selected category */}
+            {form.serviceCategories.length > 0 && (
+              <div style={{ borderTop: '1px solid #e8ecf0', paddingTop: '18px' }}>
+                <p style={{ fontSize: '13px', fontWeight: '700', color: '#1a2e44', margin: '0 0 14px' }}>
+                  Specific Service Types
+                  <span style={{ fontWeight: '400', color: '#8a9bb0', marginLeft: '6px' }}>
+                    — select all that apply (leave blank to accept all types in the category)
+                  </span>
+                </p>
+                {form.serviceCategories.map(catKey => {
+                  const cat   = CATEGORIES[catKey];
+                  if (!cat) return null;
+                  return (
+                    <div key={catKey} style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '16px' }}>{cat.icon}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#1a2e44' }}>{cat.label}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {cat.types.map(type => {
+                          const selected = form.serviceTypes.includes(type);
+                          return (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => toggleServiceType(type)}
+                              style={{
+                                padding: '6px 14px', borderRadius: '20px', cursor: 'pointer',
+                                border: selected ? `2px solid ${cat.color}` : '2px solid #e8ecf0',
+                                background: selected ? `${cat.color}15` : '#f8fafc',
+                                color: selected ? cat.color : '#4a5568',
+                                fontSize: '12px', fontWeight: selected ? '700' : '500',
+                                fontFamily: "'Outfit', sans-serif", transition: 'all 0.15s',
+                              }}
+                            >
+                              {selected ? '✓ ' : ''}{type}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {form.serviceTypes.length === 0 && (
+                  <p style={{ fontSize: '12px', color: '#e67e22', fontWeight: '600' }}>
+                    ⚠ No specific types selected — you will receive all job types within your selected categories.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Skills */}
